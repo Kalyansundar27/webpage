@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive European Itinerary Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Refined Warm Neutral with Muted Teal and Terracotta Accents -->
+    <!-- Application Structure Plan: The structure remains a dashboard for comparing four itineraries. The key enhancement is the user experience through visual design. I've improved the layout with more spacing and clearer section divisions using cards. Animations are added for scrolling and interactions to guide the user's eye and make the page feel more dynamic and engaging. This improved aesthetic layer makes the complex information more digestible and the planning process more enjoyable, which is key for a personal project like a vacation planner. -->
+    <!-- Visualization & Content Choices: 1. Itinerary Comparison: The stacked bar chart and abstract map are retained but visually enhanced. The chart uses a refined color palette, and the map now features pulsing animations on active points to draw attention. 2. Daily Details: The accordion has been restyled with smoother animations and clearer visual cues for the open state. 3. Interactive Elements: All buttons and tabs have enhanced hover and active states (shadow, transform) to provide better tactile feedback. These visual upgrades make the existing interactive structure feel more responsive and premium. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container { height: 400px; }
+        }
+        .active-itinerary {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(13, 148, 136, 0.2), 0 4px 6px -2px rgba(13, 148, 136, 0.1);
+            background-color: #0F766E !important;
+            color: white !important;
+            border-color: #0F766E !important;
+        }
+        .map-point { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .map-point.active {
+            transform: scale(1.5);
+            background-color: #f59e0b;
+            border-color: #d97706;
+            animation: pulse 2s infinite;
+        }
+        .map-path { 
+            stroke-dasharray: 1000; 
+            stroke-dashoffset: 1000; 
+            animation: draw 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards; 
+        }
+        @keyframes draw { to { stroke-dashoffset: 0; } }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1.5); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+            50% { transform: scale(1.6); box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+        }
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        .accordion-toggle .icon { transition: transform 0.3s ease-in-out; }
+        .accordion-toggle.open .icon { transform: rotate(180deg); }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #134e4a, #0d9488);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .map-container {
+             background-color: #cad2d3; /* Fallback color */
+             background-image: url('https://upload.wikimedia.org/wikipedia/commons/c/c4/Europe_relief_laea_location_map.jpg');
+             background-size: cover;
+             background-position: center;
+        }
+        .map-overlay {
+            background-color: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(1px);
+        }
+        .gemini-output {
+            border-left: 3px solid #14b8a6;
+            padding-left: 1rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div id="local-file-error" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 m-4 rounded-lg sticky top-4 z-50" style="display: none;">
+        <p class="font-bold">AI Feature Notice</p>
+        <p>The AI features require an internet connection and do not work when this file is opened directly from your computer (`file:///...`). This is a standard browser security feature.</p>
+        <p class="mt-2"><strong>To fix this:</strong> Please use a simple local web server. If you use a code editor like VS Code, the "Live Server" extension is a great one-click option.</p>
+    </div>
+
+    <div id="app" class="container mx-auto p-4 md:p-8 max-w-7xl">
+        
+        <header class="text-center mb-12 md:mb-16 reveal">
+            <h1 class="text-5xl md:text-6xl font-extrabold gradient-text mb-3">European Sojourn Planner</h1>
+            <p class="text-lg text-slate-600">Interactively explore four curated 16-day itineraries to craft your perfect trip.</p>
+        </header>
+
+        <section id="itinerary-selector" class="mb-12 md:mb-16 reveal">
+            <h2 class="text-3xl font-bold text-center mb-8 text-slate-700">Choose Your Adventure</h2>
+            <div id="itinerary-buttons" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            </div>
+        </section>
+
+        <main class="bg-white p-6 sm:p-10 rounded-2xl shadow-xl reveal">
+            
+            <section id="comparison-dashboard" class="mb-12">
+                <h3 class="text-3xl font-bold text-teal-800 mb-6 border-b-2 border-slate-100 pb-4">At a Glance: <span id="selected-itinerary-title" class="font-semibold"></span></h3>
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-8 items-center">
+                    <div class="lg:col-span-2">
+                        <h4 class="text-xl font-semibold mb-4 text-center text-slate-600">Geographic Flow</h4>
+                        <div id="map-container" class="relative w-full aspect-square rounded-2xl p-4 overflow-hidden shadow-inner">
+                            <div class="map-overlay absolute inset-0"></div>
+                            <svg id="map-paths" class="absolute inset-0 w-full h-full" viewbox="0 0 400 400" preserveAspectRatio="xMidYMid meet"></svg>
+                            <div id="map-points"></div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-3">
+                        <h4 class="text-xl font-semibold mb-4 text-center text-slate-600">Pacing & Focus (Days per Region)</h4>
+                        <div class="chart-container">
+                            <canvas id="pacingChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="daily-breakdown">
+                <h3 class="text-3xl font-bold text-teal-800 mb-6 border-b-2 border-slate-100 pb-4">Daily Itinerary</h3>
+                 <div class="bg-teal-50 border-l-4 border-teal-500 text-teal-900 p-4 rounded-r-lg mb-8" role="alert">
+                    <p class="font-bold">How to Use</p>
+                    <p>Click on any day below to expand the detailed plan. Use the ✨ buttons to get AI-powered suggestions!</p>
+                </div>
+                <div id="itinerary-details-container" class="space-y-3">
+                </div>
+            </section>
+        </main>
+        
+        <section id="gemini-qa" class="my-16 reveal">
+            <h2 class="text-4xl font-bold text-center text-slate-700 mb-4">✨ Ask AI About This Trip</h2>
+            <p class="text-center text-slate-600 mb-8 max-w-2xl mx-auto">Have a question about the selected itinerary? Ask our AI travel assistant for insights and ideas.</p>
+            <div class="max-w-2xl mx-auto">
+                <div class="flex gap-2">
+                    <input type="text" id="ai-question-input" placeholder="e.g., What's the most romantic part of this trip?" class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none transition-shadow">
+                    <button id="ask-ai-btn" class="bg-amber-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-amber-600 transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5">Ask</button>
+                </div>
+                <div class="text-center mt-4 text-sm text-slate-500">
+                    <p>Or try an example:</p>
+                    <div id="example-questions" class="flex flex-wrap justify-center gap-2 mt-2">
+                        <button class="example-question-btn bg-slate-200 px-3 py-1 rounded-full hover:bg-slate-300 transition">Summarize this trip in 3 bullets.</button>
+                        <button class="example-question-btn bg-slate-200 px-3 py-1 rounded-full hover:bg-slate-300 transition">Which part is best for hiking?</button>
+                         <button class="example-question-btn bg-slate-200 px-3 py-1 rounded-full hover:bg-slate-300 transition">What should we pack?</button>
+                    </div>
+                </div>
+            </div>
+            <div id="ai-output-container" class="mt-8 bg-white p-8 rounded-2xl shadow-lg prose max-w-4xl mx-auto" style="display: none;">
+                <div id="ai-output" class="text-slate-600 leading-relaxed"></div>
+            </div>
+        </section>
+
+        <section id="regional-deep-dive" class="my-16 reveal">
+            <h2 class="text-4xl font-bold text-center text-slate-700 mb-10">Regional Deep Dives</h2>
+             <div class="bg-white rounded-2xl shadow-xl p-6 sm:p-10">
+                <div class="flex flex-wrap justify-center border-b border-slate-200 mb-8">
+                    <div id="region-tabs" class="flex flex-wrap -mb-px"></div>
+                </div>
+                <div id="region-content"></div>
+            </div>
+        </section>
+
+        <section id="logistics" class="my-16 reveal">
+             <h2 class="text-4xl font-bold text-center text-slate-700 mb-10">Key Considerations</h2>
+             <div id="logistics-content" class="grid grid-cols-1 md:grid-cols-3 gap-8"></div>
+        </section>
+
+        <footer class="text-center mt-16 text-slate-500 reveal">
+            <p>Bon Voyage! We hope this planner helps you craft the journey of a lifetime.</p>
+        </footer>
+    </div>
+
+<script>
+const AppData = {
+    itineraries: [
+        {
+            title: "The Grand Tapestry",
+            subtitle: "Fast-Paced & All-Inclusive",
+            id: 'grand-tapestry',
+            regions: ['French Riviera', 'Provence', 'Lake Como', 'Dolomites', 'Sardinia or Sicily'],
+            days: [
+                { day: "1-3", location: "Nice, Èze & Monaco", focus: "Arrive and immerse yourselves in the timeless glamour of the French Riviera. Settle into Nice, strolling the iconic Promenade des Anglais as the sun sets over the Baie des Anges. The following days are for exploration: lose yourselves in the vibrant colors of the Cours Saleya flower market, then escape to the medieval hilltop village of Èze for breathtaking views, and finally, experience the opulent splendor of Monaco." },
+                { day: "4-6", location: "Aix-en-Provence & Luberon", focus: "Transition to the heart of Provence. Base yourselves in the elegant city of Aix-en-Provence, famous for its fountains and markets. From here, take a rental car on a journey through the Luberon Valley's storybook villages. Discover the dramatic cliffside setting of Gordes, the rich ochre hues of Roussillon, and indulge in a wine tasting at a local vineyard, savoring the region's famed rosé." },
+                { day: "7-8", location: "Lake Como, Italy", focus: "A scenic drive takes you from the rolling hills of Provence to the serene, dramatic beauty of the Italian Alps. Arrive at Lake Como and feel the change in atmosphere. Your time here is for tranquility—use the local ferries to hop between the picturesque towns of Bellagio and Varenna, admiring the grand villas and lush gardens that line the shores." },
+                { day: "9-11", location: "Dolomites (Val Gardena)", focus: "Journey deeper into the mountains to your base in Val Gardena. The Dolomites' majestic limestone peaks will surround you. Use the world-class cable car system to ascend to incredible heights for unforgettable hikes, like the iconic Seceda ridgeline. This is a time for fresh alpine air, stunning panoramas, and hearty mountain cuisine." },
+                { day: "12-16", location: "Sardinia or Sicily", focus: "A short flight transports you to a new world. Whether you choose Sardinia's wild, pristine beaches or Sicily's rich tapestry of history and culture, these days are for island immersion. Explore ancient ruins, relax on sun-drenched coasts, charter a boat to hidden coves, and indulge in the unique culinary traditions of your chosen island paradise." },
+                { day: "17", location: "Departure", focus: "After a final Italian breakfast, drive to the island's airport for your journey home, filled with memories of an epic European sojourn." }
+            ],
+            pacing: { 'French Riviera': 3, 'Provence': 3, 'Lake Como': 2, 'Dolomites': 3, 'Sardinia or Sicily': 5 }
+        },
+        {
+            title: "Riviera & Alps",
+            subtitle: "Focused on France & Dolomites",
+            id: 'riviera-alps',
+            regions: ['French Riviera', 'Provence', 'Lake Como', 'Dolomites'],
+            days: [
+                { day: "1-4", location: "French Riviera In-Depth", focus: "Settle in for a deeper exploration of the Côte d'Azur. Use the efficient coastal train to explore beyond Nice. Discover the old-world charm and Picasso museum in Antibes, the glamour of Cannes' La Croisette, and the unique Italian feel of Menton near the border. This relaxed pace allows for leisurely beach days, museum visits, and perhaps a perfume-making workshop in Grasse." },
+                { day: "5-8", location: "Provence Immersion", focus: "With more time in Provence, you can truly savor its 'art de vivre'. Spend a few days based in Aix-en-Provence exploring its markets and Cézanne's legacy. Then, perhaps move to a charming guesthouse in the Luberon Valley itself. This allows for exploring more villages, taking a hands-on cooking class, and dedicating a full day to the region's renowned wineries without feeling rushed." },
+                { day: "9-10", location: "Lake Como Transition", focus: "A beautiful drive brings you to the tranquil shores of Lake Como. This two-day interlude is a perfect change of pace. Enjoy a boat trip to see the grand villas from the water, explore the cobbled lanes of Bellagio, and enjoy romantic lakeside dinners as you transition from the soul of France to the heart of the Italian Alps." },
+                { day: "11-16", location: "Extended Dolomites Adventure", focus: "This extended stay allows you to fully appreciate the scale and beauty of the Dolomites. You could even split your stay between two valleys, like Val Gardena and Cortina d'Ampezzo, to experience different perspectives. Embark on longer hikes like the Tre Cime di Lavaredo loop, take a scenic drive on the Great Dolomites Road, and have enough buffer days to accommodate mountain weather, ensuring you experience the best of this UNESCO World Heritage site." },
+                { day: "17", location: "Departure", focus: "After a final alpine breakfast, enjoy the scenic drive out of the mountains to Venice or Milan for your flight home." }
+            ],
+            pacing: { 'French Riviera': 4, 'Provence': 4, 'Lake Como': 2, 'Dolomites': 6, 'Sardinia or Sicily': 0 }
+        },
+        {
+            title: "Italian Heartland",
+            subtitle: "Lakes, Peaks, and Islands",
+            id: 'italian-heartland',
+            regions: ['Lake Como', 'Dolomites', 'Sardinia or Sicily'],
+            days: [
+                { day: "1-2", location: "Lake Como, Italy", focus: "Arrive directly into Italy via Milan. A short journey brings you to the elegant shores of Lake Como. These first two days are for unwinding and acclimatizing to Italian time. Enjoy leisurely ferry rides, explore the charming towns of Varenna and Bellagio, and simply soak in the serene, pre-alpine beauty." },
+                { day: "3-8", location: "Deep Dive into the Dolomites", focus: "With a generous six-day stay, you can establish a comfortable base in a valley like Val Gardena or Alta Badia and truly explore. This allows for a mix of challenging full-day hikes, leisurely walks through alpine meadows, scenic drives over multiple mountain passes, and time to enjoy the unique Ladin culture and cuisine. You'll have the flexibility to chase good weather and discover hidden gems beyond the main attractions." },
+                { day: "9-16", location: "Extended Island Sojourn", focus: "This itinerary dedicates a full week to either Sardinia or Sicily, allowing for a truly in-depth regional exploration rather than a brief visit. You could explore two different regions of one island, such as the north and south coasts of Sardinia, or the east and west of Sicily. This immersive pace allows for a blend of beach relaxation, cultural site-seeing, culinary discovery, and getting a true feel for the unique rhythm of Italian island life." },
+                { day: "17", location: "Departure", focus: "Depart from your island airport, feeling fully refreshed and immersed in the beauty of Italy." }
+            ],
+            pacing: { 'French Riviera': 0, 'Provence': 0, 'Lake Como': 2, 'Dolomites': 6, 'Sardinia or Sicily': 8 }
+        },
+        {
+            title: "Riviera Gateway",
+            subtitle: "Alps & Mediterranean Isles",
+            id: 'riviera-gateway',
+            regions: ['French Riviera', 'Lake Como', 'Dolomites', 'Sardinia or Sicily'],
+            days: [
+                { day: "1-2", location: "Nice (French Riviera)", focus: "Your journey begins with a brief but glamorous introduction to France. Arrive in Nice and spend two days exploring the essentials: the Promenade des Anglais, the vibrant old town, and the stunning sea views from Castle Hill. It's a perfect, sun-kissed start before your Italian adventure." },
+                { day: "3-5", location: "Lake Como, Italy", focus: "Travel from the Riviera to the Italian Lakes. With three days in Lake Como, you can explore at a more relaxed pace. Dedicate a full day to ferry-hopping between Bellagio, Varenna, and Menaggio. On the second day, perhaps visit a famous villa and its gardens, like the stunning Villa del Balbianello, before a final lakeside aperitivo." },
+                { day: "6-10", location: "Dolomites Exploration", focus: "A five-day stay in the Dolomites provides a fantastic opportunity to experience the highlights. Base yourself in a central valley like Val Gardena. You'll have time for at least two major hikes (like Seceda and Alpe di Siusi), a spectacular scenic drive over the Sella Pass, and a day to explore a nearby alpine lake like Lago di Braies, all while enjoying the crisp mountain air." },
+                { day: "11-16", location: "Island Discovery", focus: "Fly from northern Italy to Sardinia or Sicily for the final leg of your trip. Six days is the perfect amount of time to get to know one key region of your chosen island well. Whether it's exploring the historic cities and volcanic landscapes of Eastern Sicily or the pristine beaches and rugged interior of Sardinia, you'll have ample time for discovery and relaxation." },
+                { day: "17", location: "Departure", focus: "Enjoy a final cappuccino before heading to the airport for your flight home." }
+            ],
+            pacing: { 'French Riviera': 2, 'Provence': 0, 'Lake Como': 3, 'Dolomites': 5, 'Sardinia or Sicily': 6 }
+        }
+    ],
+    map: {
+        points: {
+            'French Riviera': { x: '27%', y: '65%', name: 'French Riviera' },
+            'Provence': { x: '24%', y: '64%', name: 'Provence' },
+            'Lake Como': { x: '32%', y: '58%', name: 'Lake Como' },
+            'Dolomites': { x: '36%', y: '55%', name: 'Dolomites' },
+            'Sardinia or Sicily': { x: '33%', y: '80%', name: 'Sardinia/Sicily' }
+        },
+        paths: {
+            'grand-tapestry': ['French Riviera', 'Provence', 'Lake Como', 'Dolomites', 'Sardinia or Sicily'],
+            'riviera-alps': ['French Riviera', 'Provence', 'Lake Como', 'Dolomites'],
+            'italian-heartland': ['Lake Como', 'Dolomites', 'Sardinia or Sicily'],
+            'riviera-gateway': ['French Riviera', 'Lake Como', 'Dolomites', 'Sardinia or Sicily']
+        }
+    },
+    regionalInfo: [
+        { name: 'French Riviera', icon: '☀️', content: `<p class="text-slate-600 mb-4">A realm of dazzling coastlines, artistic heritage, and timeless glamour. Stroll Nice's Promenade des Anglais, explore the medieval village of Èze, or experience the chic atmosphere of Cannes. The Riviera is a feast for the senses, from the vibrant Cours Saleya market to the perfume workshops of Grasse.</p><ul class="list-disc list-inside space-y-2 text-slate-700"><li><strong>Key Sights:</strong> Vieux Nice, Musée Matisse, La Croisette (Cannes), Picasso Museum (Antibes).</li><li><strong>Experiences:</strong> Perfume creation in Grasse, scenic drives on the Corniches, boat tours.</li><li><strong>Vibe:</strong> Glamorous, artistic, sun-drenched, and lively.</li></ul>` },
+        { name: 'Provence', icon: '🍇', content: `<p class="text-slate-600 mb-4">Provence captivates with its luminous landscapes and art de vivre. Explore the elegant city of Aix-en-Provence, visit iconic hilltop villages like Gordes and Roussillon, and indulge in the region's famous rosé wines. It's a land of fragrant lavender fields (in season), vibrant markets, and rustic charm.</p><ul class="list-disc list-inside space-y-2 text-slate-700"><li><strong>Key Sights:</strong> Cours Mirabeau (Aix), Luberon villages (Gordes, Roussillon), Ochre Trail.</li><li><strong>Experiences:</strong> Wine tasting, Provençal cooking classes, exploring local markets.</li><li><strong>Vibe:</strong> Rustic, charming, sensory, and soulful.</li></ul>` },
+        { name: 'Dolomites', icon: '⛰️', content: `<p class="text-slate-600 mb-4">A UNESCO World Heritage site offering breathtaking panoramas of jagged peaks and verdant valleys. Utilize an extensive network of cable cars to access stunning viewpoints and trailheads for iconic hikes like Seceda and Tre Cime di Lavaredo. Enjoy scenic drives over legendary mountain passes and savor the unique Tyrolean cuisine.</p><ul class="list-disc list-inside space-y-2 text-slate-700"><li><strong>Key Sights:</strong> Seceda ridgeline, Alpe di Siusi, Tre Cime di Lavaredo, Lake Braies.</li><li><strong>Experiences:</strong> Hiking for all levels, scenic drives (Great Dolomites Road), cable car ascents.</li><li><strong>Vibe:</strong> Majestic, adventurous, serene, and breathtaking.</li></ul>` },
+        { name: 'Sardinia or Sicily', icon: '🏝️', content: `<p class="text-slate-600 mb-4">Choose your island adventure. <strong>Sardinia</strong> offers wild beauty and world-class beaches with emerald waters, ideal for nature lovers. <strong>Sicily</strong> is a vibrant tapestry of layered history, with Greek temples, Norman cathedrals, and diverse landscapes dominated by Mount Etna. Each offers a unique culture and culinary tradition.</p><ul class="list-disc list-inside space-y-2 text-slate-700"><li><strong>Sardinia Highlights:</strong> Costa Smeralda, La Maddalena Archipelago, Nuragic ruins.</li><li><strong>Sicily Highlights:</strong> Mount Etna, Taormina's Greek Theatre, Valley of the Temples, Palermo markets.</li><li><strong>Vibe:</strong> Sardinia - Wild & pristine. Sicily - Historic & vibrant.</li></ul>` }
+    ],
+    logistics: [
+        { title: 'Peak Season Travel', icon: '📅', content: 'August is peak season. Expect crowds and heat. Book accommodations, transport, and popular tours months in advance. Start your days early to avoid the largest crowds.' },
+        { title: 'Transportation', icon: '🚗', content: 'A rental car is essential for exploring Provence and the Dolomites. For the French Riviera coast, the regional train (TER) is often more efficient due to traffic and parking challenges. Plan for one-way rental fees and tolls.' },
+        { title: '2025 Jubilee Year', icon: '⛪️', content: 'Italy will host a Catholic Jubilee Year in 2025. Expect a significant increase in visitors across the country, not just in Rome. This makes early booking for all Italian segments of your trip absolutely critical.' }
+    ]
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    let selectedItineraryIndex = 0;
+    let chart;
+
+    const itineraryButtonsContainer = document.getElementById('itinerary-buttons');
+    const selectedItineraryTitle = document.getElementById('selected-itinerary-title');
+    const itineraryDetailsContainer = document.getElementById('itinerary-details-container');
+    const mapPointsContainer = document.getElementById('map-points');
+    const mapPathsContainer = document.getElementById('map-paths');
+    const regionTabsContainer = document.getElementById('region-tabs');
+    const regionContentContainer = document.getElementById('region-content');
+    const logisticsContainer = document.getElementById('logistics-content');
+
+    function init() {
+        renderItineraryButtons();
+        renderMapPoints();
+        renderRegionalInfoTabs();
+        renderLogistics();
+        initChart();
+        updateAll();
+        initScrollAnimations();
+        initGeminiFeatures();
+    }
+    
+    async function callGemini(prompt) {
+        const apiKey = ""; 
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const result = await response.json();
+            if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                return result.candidates[0].content.parts[0].text;
+            } else {
+                console.error("Unexpected API response structure:", result);
+                 if (window.location.protocol === 'file:') {
+                    const localFileErrorDiv = document.getElementById('local-file-error');
+                    if (localFileErrorDiv) localFileErrorDiv.style.display = 'block';
+                    return "AI features require a web server. See notice at top of page.";
+                }
+                return "Sorry, the AI response was not in the expected format.";
+            }
+        } catch (error) {
+            console.error("Error calling Gemini API:", error);
+             if (window.location.protocol === 'file:') {
+                const localFileErrorDiv = document.getElementById('local-file-error');
+                if (localFileErrorDiv) localFileErrorDiv.style.display = 'block';
+                return "AI features require a web server. See notice at top of page.";
+            }
+            return "Sorry, there was an error connecting to the AI service.";
+        }
+    }
+
+    function initGeminiFeatures() {
+        const askAiBtn = document.getElementById('ask-ai-btn');
+        const questionInput = document.getElementById('ai-question-input');
+        const exampleQuestionsContainer = document.getElementById('example-questions');
+
+        askAiBtn.addEventListener('click', () => handleAskAI(questionInput.value));
+        questionInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleAskAI(questionInput.value);
+            }
+        });
+        
+        exampleQuestionsContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('example-question-btn')) {
+                const question = e.target.textContent;
+                questionInput.value = question;
+                handleAskAI(question);
+            }
+        });
+
+        itineraryDetailsContainer.addEventListener('click', function(e) {
+            if (e.target && e.target.classList.contains('suggest-activities-btn')) {
+                handleSuggestActivities(e.target);
+            }
+        });
+    }
+
+    async function handleAskAI(question) {
+        if (!question.trim()) return;
+
+        const askBtn = document.getElementById('ask-ai-btn');
+        const outputContainer = document.getElementById('ai-output-container');
+        const outputDiv = document.getElementById('ai-output');
+        const selectedItinerary = AppData.itineraries[selectedItineraryIndex];
+        const itineraryDetails = selectedItinerary.days.map(d => `Days ${d.day} in ${d.location}: ${d.focus}`).join('\n');
+        const prompt = `You are an expert travel assistant. A user is looking at an itinerary called "${selectedItinerary.title}". Based on the itinerary details below, please answer their specific question.
+        
+        Itinerary Details:
+        ${itineraryDetails}
+
+        User's Question: "${question}"`;
+
+        askBtn.disabled = true;
+        askBtn.innerHTML = `<div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>`;
+        outputContainer.style.display = 'block';
+        outputDiv.innerHTML = `<div class="text-center p-4"> <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500 mx-auto"></div> <p class="mt-2 text-slate-500">Thinking...</p> </div>`;
+
+        const response = await callGemini(prompt);
+        const formattedResponse = response.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+        outputDiv.innerHTML = formattedResponse;
+        
+        askBtn.disabled = false;
+        askBtn.innerHTML = `Ask`;
+    }
+
+    async function handleSuggestActivities(button) {
+        const location = button.dataset.dayLocation;
+        const focus = button.dataset.dayFocus;
+        const controlsDiv = button.closest('.gemini-controls');
+        const outputDiv = controlsDiv.nextElementSibling;
+        const accordionContent = button.closest('.accordion-content');
+
+        const prompt = `I am planning a day in ${location} during a trip to Europe. The overall theme for the day is: "${focus}". Please suggest 3 specific and creative activities that fit this theme. For each activity, provide a brief, enticing description and why it's a great choice for a couple. Format the response with a bold heading for each activity.`;
+
+        button.disabled = true;
+        button.innerHTML = '✨ Thinking...';
+        outputDiv.style.display = 'block';
+        outputDiv.innerHTML = `<div class="p-4 flex items-center justify-center"> <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-teal-500 mr-2"></div> <span>Generating ideas...</span> </div>`;
+        
+        if (accordionContent && accordionContent.style.maxHeight) {
+            accordionContent.style.maxHeight = accordionContent.scrollHeight + 150 + "px";
+        }
+
+        const response = await callGemini(prompt);
+        const formattedResponse = response.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+        outputDiv.innerHTML = formattedResponse;
+        controlsDiv.style.display = 'none';
+
+        if (accordionContent && accordionContent.style.maxHeight) {
+            accordionContent.style.maxHeight = accordionContent.scrollHeight + "px";
+        }
+    }
+
+    function renderItineraryButtons() {
+        AppData.itineraries.forEach((itinerary, index) => {
+            const button = document.createElement('button');
+            button.className = 'itinerary-button text-left p-5 border-2 border-slate-300 rounded-xl hover:border-teal-600 hover:bg-white hover:shadow-lg hover:-translate-y-1 transition-all duration-300';
+            button.innerHTML = `<h4 class="font-bold text-lg text-teal-800">${itinerary.title}</h4> <p class="text-sm text-slate-500">${itinerary.subtitle}</p>`;
+            button.addEventListener('click', () => { selectedItineraryIndex = index; updateAll(); });
+            itineraryButtonsContainer.appendChild(button);
+        });
+    }
+
+    function renderMapPoints() {
+        mapPointsContainer.innerHTML = '';
+        for (const key in AppData.map.points) {
+            const point = AppData.map.points[key];
+            const pointDiv = document.createElement('div');
+            pointDiv.id = `map-point-${key.replace(/\s+/g, '-').replace(/or/g, '')}`;
+            pointDiv.className = 'map-point absolute transform -translate-x-1/2 -translate-y-1/2 bg-slate-100 w-4 h-4 rounded-full border-2 border-white shadow-md';
+            pointDiv.style.left = point.x;
+            pointDiv.style.top = point.y;
+            const labelDiv = document.createElement('span');
+            labelDiv.className = 'absolute top-full left-1/2 transform -translate-x-1/2 mt-2 text-xs font-semibold text-slate-800 whitespace-nowrap bg-white/80 backdrop-blur-sm px-1.5 py-0.5 rounded-md shadow';
+            labelDiv.textContent = point.name;
+            pointDiv.appendChild(labelDiv);
+            mapPointsContainer.appendChild(pointDiv);
+        }
+    }
+    
+    function updateMap() {
+        const selectedItinerary = AppData.itineraries[selectedItineraryIndex];
+        const pathData = AppData.map.paths[selectedItinerary.id];
+        document.querySelectorAll('.map-point').forEach(el => el.classList.remove('active'));
+        pathData.forEach(regionKey => {
+            const pointEl = document.getElementById(`map-point-${regionKey.replace(/\s+/g, '-').replace(/or/g, '')}`);
+            if (pointEl) pointEl.classList.add('active');
+        });
+        mapPathsContainer.innerHTML = '';
+        for (let i = 0; i < pathData.length - 1; i++) {
+            const startPoint = AppData.map.points[pathData[i]];
+            const endPoint = AppData.map.points[pathData[i+1]];
+            if(startPoint && endPoint) {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', startPoint.x.replace('%','') * 4);
+                line.setAttribute('y1', startPoint.y.replace('%','') * 4);
+                line.setAttribute('x2', endPoint.x.replace('%','') * 4);
+                line.setAttribute('y2', endPoint.y.replace('%','') * 4);
+                line.setAttribute('stroke', '#ae2012');
+                line.setAttribute('stroke-width', '2.5');
+                line.setAttribute('stroke-linecap', 'round');
+                line.setAttribute('stroke-dasharray', '5 5');
+                line.classList.add('map-path');
+                mapPathsContainer.appendChild(line);
+            }
+        }
+    }
+
+    function initChart() {
+        const ctx = document.getElementById('pacingChart').getContext('2d');
+        const labels = AppData.itineraries.map(it => it.title);
+        const regionKeys = Object.keys(AppData.itineraries[0].pacing);
+        const datasets = regionKeys.map((region, index) => {
+            const colors = ['#005f73', '#ae2012', '#707957', '#6d6875', '#e9d8a6'];
+            return {
+                label: region,
+                data: AppData.itineraries.map(it => it.pacing[region] || 0),
+                backgroundColor: colors[index % colors.length],
+                borderRadius: 4,
+            };
+        });
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { font: { size: 12 } } },
+                    tooltip: {
+                        backgroundColor: 'rgba(0,0,0,0.7)', titleFont: { weight: 'bold' },
+                        callbacks: { label: (context) => `${context.dataset.label}: ${context.parsed.y} days` }
+                    }
+                },
+                scales: {
+                    x: { stacked: true, grid: { display: false } },
+                    y: { stacked: true, title: { display: true, text: 'Number of Days', font: { size: 14, weight: '500' } }, grid: { color: '#e2e8f0' } }
+                }
+            }
+        });
+    }
+
+    function updateItineraryDetails() {
+        const itinerary = AppData.itineraries[selectedItineraryIndex];
+        selectedItineraryTitle.textContent = itinerary.title;
+        itineraryDetailsContainer.innerHTML = '';
+        itinerary.days.forEach((item) => {
+            const div = document.createElement('div');
+            div.className = 'border border-slate-200 rounded-xl bg-slate-50 overflow-hidden shadow-sm';
+            div.innerHTML = `
+                <button class="accordion-toggle w-full flex justify-between items-center text-left p-5 hover:bg-slate-100 focus:outline-none transition-colors duration-200">
+                    <span class="font-semibold text-lg text-teal-800">Days ${item.day}: <span class="font-normal text-slate-700">${item.location}</span></span>
+                    <span class="icon text-teal-700 text-2xl font-light transform transition-transform duration-300">↓</span>
+                </button>
+                <div class="accordion-content">
+                    <div class="p-5 border-t border-slate-200 bg-white">
+                        <p class="leading-relaxed text-slate-600 mb-6">${item.focus}</p>
+                        <div class="gemini-controls text-right">
+                             <button class="suggest-activities-btn bg-teal-100 text-teal-800 text-sm font-bold py-2 px-4 rounded-lg hover:bg-teal-200 transition-all duration-200 hover:shadow" data-day-location="${item.location}" data-day-focus="${item.focus}">
+                                ✨ Suggest Activities for This Day
+                            </button>
+                        </div>
+                        <div class="activities-output gemini-output" style="display: none;"></div>
+                    </div>
+                </div>`;
+            itineraryDetailsContainer.appendChild(div);
+        });
+        itineraryDetailsContainer.querySelectorAll('.accordion-toggle').forEach(button => {
+            button.addEventListener('click', () => {
+                const content = button.nextElementSibling;
+                const wasOpen = button.classList.contains('open');
+                document.querySelectorAll('.accordion-content').forEach(c => c.style.maxHeight = null);
+                document.querySelectorAll('.accordion-toggle').forEach(b => b.classList.remove('open'));
+                if (!wasOpen) {
+                    button.classList.add('open');
+                    content.style.maxHeight = content.scrollHeight + "px";
+                }
+            });
+        });
+    }
+    
+    function renderRegionalInfoTabs() {
+        AppData.regionalInfo.forEach((region, index) => {
+            const tab = document.createElement('button');
+            tab.className = 'region-tab px-5 py-3 text-lg font-semibold text-slate-500 border-b-4 border-transparent hover:text-teal-600 hover:border-teal-200 transition-all duration-300';
+            tab.innerHTML = `${region.icon} ${region.name}`;
+            tab.addEventListener('click', () => {
+                renderRegionalInfoContent(index);
+                document.querySelectorAll('.region-tab').forEach(t => t.classList.remove('text-teal-700', 'border-teal-600'));
+                tab.classList.add('text-teal-700', 'border-teal-600');
+            });
+            regionTabsContainer.appendChild(tab);
+        });
+        document.querySelector('.region-tab').click();
+    }
+
+    function renderRegionalInfoContent(index) {
+        const region = AppData.regionalInfo[index];
+        regionContentContainer.innerHTML = `<div class="transition-opacity duration-500 opacity-0" id="region-content-inner">
+            <h4 class="text-3xl font-bold mb-4 text-teal-800">${region.icon} ${region.name}</h4>
+            <div class="prose max-w-none text-slate-600">${region.content}</div></div>`;
+        setTimeout(() => document.getElementById('region-content-inner').classList.replace('opacity-0', 'opacity-100'), 50);
+    }
+
+    function renderLogistics() {
+        AppData.logistics.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300';
+            card.innerHTML = `<div class="flex items-center mb-4"><span class="text-4xl mr-5">${item.icon}</span><h4 class="text-2xl font-bold text-teal-800">${item.title}</h4></div><p class="text-slate-600 leading-relaxed">${item.content}</p>`;
+            logisticsContainer.appendChild(card);
+        });
+    }
+
+    function initScrollAnimations() {
+        const revealElements = document.querySelectorAll('.reveal');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add('visible');
+            });
+        }, { threshold: 0.1 });
+        revealElements.forEach(el => observer.observe(el));
+    }
+
+    function updateAll() {
+        document.querySelectorAll('.itinerary-button').forEach((btn, index) => {
+            btn.classList.toggle('active-itinerary', index === selectedItineraryIndex);
+        });
+        updateItineraryDetails();
+        updateMap();
+        const aiOutputContainer = document.getElementById('ai-output-container');
+        if(aiOutputContainer) aiOutputContainer.style.display = 'none';
+        const aiOutput = document.getElementById('ai-output');
+        if(aiOutput) aiOutput.innerHTML = '';
+        const questionInput = document.getElementById('ai-question-input');
+        if(questionInput) questionInput.value = '';
+    }
+    
+    init();
+});
+</script>
+
+</body>
+</html>
