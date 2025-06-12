@@ -297,8 +297,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function callGemini(prompt) {
-        const apiKey = ""; 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${AIzaSyAxgLxSLsnCqFaIE_FTtv2HJuKgTJn5G-Q}`;
+        const apiKey = "AIzaSyAxgLxSLsnCqFaIE_FTtv2HJuKgTJn5G-Q"; 
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
 
         try {
