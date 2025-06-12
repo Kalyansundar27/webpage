@@ -184,6 +184,7 @@
         </footer>
     </div>
 
+    <script src="config.js"></script>
 <script>
 const AppData = {
     itineraries: [
@@ -297,8 +298,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function callGemini(prompt) {
-        const apiKey = ""; // Supply via env variable or user input before hosting
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const apiKey = typeof geminiApiKey !== 'undefined' ? geminiApiKey : "";
+        if (!apiKey) {
+            console.error('Gemini API key not provided.');
+            return "Gemini API key not configured.";
+        }
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
 
         try {
