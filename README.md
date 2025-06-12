@@ -26,3 +26,16 @@ Use a local web server so the scripts can load correctly. Two easy options are:
 4. Modify the `callGemini` function in the HTML to reference `geminiApiKey` instead of a hard‑coded string.
 
 Alternatively, you could store the key in an environment variable and have a small server script inject it or prompt for it at runtime. The key should never be committed to the repository.
+
+### Using `server.js` and an Environment Variable
+
+1. Set the environment variable `GEMINI_API_KEY` with your key:
+   ```bash
+   export GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+   ```
+2. Start the provided server:
+   ```bash
+   node server.js
+   ```
+   This serves `europe_trip.html` at `http://localhost:3000` and exposes the key via `config.js`.
+3. Open the page in your browser and the AI features will use the key automatically.
